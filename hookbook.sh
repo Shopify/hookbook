@@ -61,23 +61,31 @@ case "${__hookbook_shellname}" in
       __hookbook_functions=()
     fi
 
-    __hookbook_debug_handler() {
-      # Bash sometimes calls DEBUG with stderr redirected to /dev/null.
-      # Yes. This is puzzling to me too.
-      # Since we want our hooks to be able to generate stderr lines, let's not
-      # call them in those cases.
-      # stat -f "%DHR" retrieves a device major number. /dev/null has a major
-      # nubmer of 3, and /dev/stderr==/dev/fd/2 has a major number of 16 when
-      # it's connected to a TTY.
-      # Note that this is likely to only work as expected on macOS.
-      if [[ "$(stat -f "%DHr" /dev/fd/2)" == "3" ]]; then
+    # Bash sometimes calls DEBUG with stderr redirected to /dev/null.
+    # Yes. This is puzzling to me too.
+    # Since we want our hooks to be able to generate stderr lines, let's not
+    # call them in those cases.
+    # `stat -f %Hr` retrieves a device major number on macOS, and `stat -c %t`
+    # does the same on linux. /dev/null has a major number of 3 on macOS and 1
+    # on linux, and /dev/stderr==/dev/fd/2 has a different number when
+    # connected to a TTY (but /dev/fd/2 is a symlink on linux).
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      __dev_null_major="$(stat -f "%Hr" "/dev/null")"
+      __stat_stderr='stat -f "%Hr" /dev/fd/2'
+    else
+      __dev_null_major="$(stat -c "%t" /dev/null)"
+      __stat_stderr='stat -c "%t" "$(readlink -f "/dev/fd/2")"'
+    fi
+    eval "__hookbook_debug_handler() {
+      if [[ \"\$(${__stat_stderr})\" == \"${__dev_null_major}\" ]]; then
         return
       fi
-      # shellcheck disable=SC2068
-      for fn in "${__hookbook_functions[@]}"; do
-        ${fn} bash-debug
+      for fn in \"\${__hookbook_functions[@]}\"; do
+        \${fn} bash-debug
       done
-    }
+    }"
+    unset __stat_stderr
+    unset __dev_null_major
 
     # If `set +x`, toggle off +x for the duration of the hook.
     # __hookbook_underscore preserves the value of $_, which is otherwise clobbered.

@@ -71,4 +71,4 @@ set -e __this_source_dir
 ```
 
 For an actual example of usage, see
-[Shadowenv](https://github.com/Shopify/shadowenv/blob/master/shadowenv.sh#L36).
+[Shadowenv](https://github.com/Shopify/shadowenv).

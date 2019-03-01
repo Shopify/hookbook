@@ -57,7 +57,7 @@ case "${__hookbook_shellname}" in
 
     ;;
   bash)
-    if declare -p __hookbook_functions >/dev/null 2>&1; then
+    if ! declare -p __hookbook_functions >/dev/null 2>&1; then
       __hookbook_functions=()
     fi
 

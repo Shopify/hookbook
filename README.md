@@ -1,27 +1,24 @@
 # hookbook
 
-Hookbook provides a way to register multiple "DEBUG" hooks in bash, and their equivalents in zsh and
-fish.
+Hookbook provides a way to register multiple "DEBUG" hooks in bash, and their equivalents in zsh.
 
-The main benefit of hookbook is that the API is unified across all three shells, while enabling
-registration of multiple hooks in bash, which is otherwise challenging since only one function can
-be registered to the `DEBUG` trap.
+The main benefit of hookbook is to be able to treat bash as if it were zsh as far as registering
+these hooks goes. The hook you register will be called with either `precmd` or `preexec`, and will
+be run only once for each process started as well as once for each command prompt generated. A lot
+of complexity is involved in making the bash `DEBUG` trap behave in this way.
 
 ## Usage
 
-Call `hookbook_add_hook` with a function name. This function will be called with one parameter,
-indicating the shell and which hook was fired:
+Call `hookbook_add_hook` with a function name. This function will be called with one parameter:
 
-* `bash-debug`: The bash ["DEBUG" trap](http://tldp.org/LDP/Bash-Beginners-Guide/html/sect_12_02.html)
-* `bash-prompt`: Called from [`PROMPT_COMMAND`](http://tldp.org/HOWTO/Bash-Prompt-HOWTO/x264.html)
-* `zsh-preexec`: [`preexec_functions`](http://zsh.sourceforge.net/Doc/Release/Functions.html#Hook-Functions)
-* `zsh-precmd`: [`precmd_functions`](http://zsh.sourceforge.net/Doc/Release/Functions.html#Hook-Functions)
-* `zsh-chpwd`: [`chpwd_functions`](http://zsh.sourceforge.net/Doc/Release/Functions.html#Hook-Functions)
-* `fish-chpwd`: Fired [when `$PWD` changes](https://github.com/fish-shell/fish-shell/blob/master/doc_src/function.txt#L24)
-* `fish-prompt`: Fired [when the prompt is generated](https://github.com/fish-shell/fish-shell/blob/master/doc_src/function.txt#L22)
+* `precmd`: [`precmd_functions`](http://zsh.sourceforge.net/Doc/Release/Functions.html#Hook-Functions) in `zsh`;
+  [`PROMPT_COMMAND`](http://tldp.org/HOWTO/Bash-Prompt-HOWTO/x264.html) in `bash`.
 
-You may want to add some heuristics to filter certain events depending on your use-case, as the bash
-`DEBUG` trap is a rather chatty hook.
+* `preexec`: [`preexec_functions`](http://zsh.sourceforge.net/Doc/Release/Functions.html#Hook-Functions) in `zsh`;
+  simulated using the bash ["DEBUG" trap](http://tldp.org/LDP/Bash-Beginners-Guide/html/sect_12_02.html).
+
+`precmd` runs immediately before generating your command prompt, and `preexec` runs immediately
+before forking a process based on the entered command. For example, take this script:
 
 ```bash
 source hookbook.sh
@@ -32,20 +29,38 @@ hookbook_add_hook myhook
 In bash, this will immediately print:
 
 ```
-bash-debug
-bash-debug
-bash-prompt
-bash-debug
-bash-debug
+precmd
 bash-5.0$
 ```
 
-Unfortunately, we haven't found a way to implement a script that can be understood by all three of
-bash, zsh, and fish, so for fish, you'll have to `source hookbook.fish` instead of `source hookbook.sh`.
+If you run a command:
 
-Depending on your use-case, it likely makes sense to copy both of these files into your application
-and source them as appropriately into the user's session. If you want to source `hookbook.sh` from
-the same directory as a script that may be loaded by either bash or zsh:
+```
+bash-5.0$ echo 'two commands' | wc -c
+preexec
+preexec
+      13
+precmd
+```
+
+The output is *almost* identical in zsh, except that `preexec` is only fired once for a whole
+process pipeline, rather than for each process in the pipeline:
+
+```
+zsh% echo 'two commands' | wc -c
+preexec
+      13
+precmd
+```
+
+Hookbook used to support `fish` as well, but we found that this was not useful: it's very easy to
+[bind a fish function to an event](https://fishshell.com/docs/current/#event), and nearly impossible
+to write a script that doesn't require completely different implementations in fish and bash/zsh
+anyway.
+
+Depending on your use-case, it likely makes sense to copy `hookbook.sh` into your application and
+source it into the user's session. If you want to source `hookbook.sh` from the same directory as
+a script that may be loaded by either bash or zsh:
 
 ```bash
 case "$(basename "$(\ps -p $$ | \awk 'NR > 1 { sub(/^-/, "", $4); print $4 }')")" in
@@ -56,19 +71,13 @@ case "$(basename "$(\ps -p $$ | \awk 'NR > 1 { sub(/^-/, "", $4); print $4 }')")
     source "$(builtin cd "$(\dirname "${BASH_SOURCE[0]}")" && \pwd)/hookbook.sh"
     ;;
   *)
-    >&2 echo "shadowenv is not compatible with your shell (bash, zsh, and fish are supported)"
+    >&2 echo "shadowenv is not compatible with your shell (only bash and zsh are supported)"
     return 1
     ;;
 esac
 ```
 
-...and an equivalent for fish:
-
-```fish
-set __this_source_dir (pushd (dirname (dirname (status -f))) ; pwd ; popd)
-source $__this_source_dir/hookbook.fish
-set -e __this_source_dir
-```
+Alternatively, you may prefer to simply inline `hookbook.sh` into another script.
 
 For an actual example of usage, see
 [Shadowenv](https://github.com/Shopify/shadowenv).

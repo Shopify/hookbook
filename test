@@ -1,0 +1,97 @@
+#!/usr/bin/ruby --disable-gems
+
+# We're being very lazy here and assuming macOS with some preconditions:
+# /bin/bash is bash 3.2
+# /usr/local/bin/bash is bash 4+
+# /usr/local/bin/zsh is installed
+
+require('open3')
+require('pty')
+
+INPUT = <<EOF
+PS1='> '
+source hookbook.sh
+f() { echo $1; }
+hookbook_add_hook f
+: @BEGIN@
+echo ok
+echo ok | wc -l
+source hookbook.sh
+echo ok | wc -l
+@DONE@
+EOF
+
+# We call DEBUG/preexec a lot of times when we source hookbook.sh the second
+# time. I wonder if we can cut that down to one.
+BASH_EXPECT = <<EOF
+preexec
+precmd
+> echo ok
+preexec
+ok
+precmd
+> echo ok | wc -l
+preexec
+preexec
+       1
+precmd
+> source hookbook.sh
+preexec
+preexec
+preexec
+precmd
+> echo ok | wc -l
+preexec
+preexec
+       1
+precmd
+EOF
+
+ZSH_EXPECT = BASH_EXPECT.gsub(/(preexec\n)+/, "preexec\n")
+
+def sanitize(str)
+  # ZSH writes some really crazy shit to stdout when it thinks it's attached to
+  # a TTY. Don't try too hard to understand this: it's just what I had to do to
+  # strip all the formatting stuff.
+  str
+    .gsub(/\r \r/, "\r")
+    .sub(/%.*?\r/, '')
+    .gsub(/\x1b\[\??[\d;]*\w/, '')
+    .gsub(/(.)\x08/, '')
+    .tr("\r", '')
+end
+
+def run_test(expect, *argv)
+  ours, theirs = PTY.open
+
+  pid = Process.spawn(*argv, in: theirs, out: theirs, err: theirs, pgroup: true)
+
+  tw = Thread.new do
+    INPUT.lines.each { |l| ours.puts(l) }
+  end
+
+  output_lines = []
+
+  found_begin = false
+  while (out = sanitize(ours.gets)) !~ /^> @DONE@/
+    output_lines << out if found_begin
+    found_begin = true if out =~ /^> : @BEGIN@/
+  end
+  ours.close
+  tw.join
+
+  if output_lines.join == expect
+    puts("OK #{argv.first}")
+  else
+    puts("NOT OK #{argv.first}")
+    puts("HAVE: #{output_lines.join.inspect}")
+    puts("WANT: #{expect.inspect}")
+    abort('test failure')
+  end
+
+  Process.waitpid2(pid)
+end
+
+run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs')
+run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc')
+run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc')

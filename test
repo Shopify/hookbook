@@ -18,7 +18,11 @@ REQUIRE_ESCAPES = %w(
 
 INPUT = <<EOF
 : @SET_ALIASES@
+\\set -eo pipefail
+: @START_STRICT@
 \\source hookbook.sh
+\\echo $?
+: @END_STRICT@
 f() { \\echo $1; }
 hookbook_add_hook f
 hookbook_add_hook f
@@ -58,6 +62,12 @@ EOF
 
 ZSH_EXPECT = BASH_EXPECT.gsub(/(preexec\n)+/, "preexec\n")
 
+STRICT_EXPECT = <<EOF
+> \\source hookbook.sh
+> \\echo $?
+0
+EOF
+
 def between(array, before, after)
   index = array.index(before)
   return [] unless index
@@ -82,6 +92,7 @@ def run_test(expect, *argv, aliases: false)
 
   sourcing_output_lines = between(lines, "> : @ALIASES@\n", "> : @BEGIN@\n")
   output_lines = between(lines, "> : @BEGIN@\n", "> : @DONE@\n")
+  strict_lines = between(lines, "> : @START_STRICT@\n", "> : @END_STRICT@\n")
 
   unescaped = sourcing_output_lines.select { |l| l.start_with?('unescaped ') }.uniq
 
@@ -94,6 +105,12 @@ def run_test(expect, *argv, aliases: false)
     puts("NOT OK #{title}")
     puts("HAVE: #{output_lines.join.inspect}")
     puts("WANT: #{expect.inspect}")
+    abort('test failure')
+  elsif strict_lines.join != STRICT_EXPECT
+    puts("NOT OK #{title}")
+    puts("failed strict check")
+    puts("HAVE: #{strict_lines.join.inspect}")
+    puts("WANT: #{STRICT_EXPECT.inspect}")
     abort('test failure')
   else
     puts("OK #{title}")

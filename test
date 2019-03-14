@@ -7,15 +7,26 @@
 
 require_relative 'shell'
 
+REQUIRE_ESCAPES = %w(
+  alias alloc bg bind bindkey break breaksw builtins case cd chdir command complete continue default dirs do done echo
+  echotc elif else end endif endsw esac eval exec exit export fxlse fc fg filetest fi for foreach getopts glob goto
+  hash hashstat history hup if jobid jobs kill limit local log login logout ls-F nice nohup notify onintr popd
+  printenv pushd pwd read readonly rehash repeat return sched set setenv settc setty setvar shift source stop suspend
+  switch telltc test then time times trap true type ulimit umask unalias uncomplete unhash unlimit unset unsetenv
+  until wait where which while
+)
+
 INPUT = <<EOF
-source hookbook.sh
-f() { echo $1; }
+: @SET_ALIASES@
+\\source hookbook.sh
+f() { \\echo $1; }
+hookbook_add_hook f
 hookbook_add_hook f
 : @BEGIN@
-echo ok
-echo ok | wc -l
-source hookbook.sh
-echo ok | wc -l
+\\echo ok
+\\echo ok | wc -l
+\\source hookbook.sh
+\\echo ok | wc -l
 : @DONE@
 EOF
 
@@ -24,21 +35,21 @@ EOF
 BASH_EXPECT = <<EOF
 preexec
 precmd
-> echo ok
+> \\echo ok
 preexec
 ok
 precmd
-> echo ok | wc -l
+> \\echo ok | wc -l
 preexec
 preexec
        1
 precmd
-> source hookbook.sh
+> \\source hookbook.sh
 preexec
 preexec
 preexec
 precmd
-> echo ok | wc -l
+> \\echo ok | wc -l
 preexec
 preexec
        1
@@ -57,22 +68,41 @@ def between(array, before, after)
 end
 
 def run_test(expect, *argv, aliases: false)
-  sh = Shell.new(*argv, prompt: '> ').send_commands(INPUT)
+  input = INPUT
+
+  if aliases
+    set_aliases = REQUIRE_ESCAPES.map do |builtin|
+      %(\\alias #{builtin}='\\echo "unescaped #{builtin}: $0:$LINENO"'\n)
+    end.join
+    input = input.sub(': @SET_ALIASES@', set_aliases + ': @ALIASES@')
+  end
+  sh = Shell.new(*argv, prompt: '> ').send_commands(input)
   lines = sh.output
   sh.close
 
+  sourcing_output_lines = between(lines, "> : @ALIASES@\n", "> : @BEGIN@\n")
   output_lines = between(lines, "> : @BEGIN@\n", "> : @DONE@\n")
 
-  if output_lines.join == expect
-    puts("OK #{argv.first}")
-  else
-    puts("NOT OK #{argv.first}")
+  unescaped = sourcing_output_lines.select { |l| l.start_with?('unescaped ') }.uniq
+
+  title = "#{argv.first}#{' (escaping)' if aliases}"
+  if unescaped.any?
+    puts("NOT OK #{title}")
+    puts(unescaped)
+    abort('test failure')
+  elsif output_lines.join != expect
+    puts("NOT OK #{title}")
     puts("HAVE: #{output_lines.join.inspect}")
     puts("WANT: #{expect.inspect}")
     abort('test failure')
+  else
+    puts("OK #{title}")
   end
 end
 
 run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs')
 run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc')
 run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc')
+run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs', aliases: true)
+run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc', aliases: true)
+run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc', aliases: true)

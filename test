@@ -5,11 +5,9 @@
 # /usr/local/bin/bash is bash 4+
 # /usr/local/bin/zsh is installed
 
-require('open3')
-require('pty')
+require_relative 'shell'
 
 INPUT = <<EOF
-PS1='> '
 source hookbook.sh
 f() { echo $1; }
 hookbook_add_hook f
@@ -18,7 +16,7 @@ echo ok
 echo ok | wc -l
 source hookbook.sh
 echo ok | wc -l
-@DONE@
+: @DONE@
 EOF
 
 # We call DEBUG/preexec a lot of times when we source hookbook.sh the second
@@ -49,36 +47,21 @@ EOF
 
 ZSH_EXPECT = BASH_EXPECT.gsub(/(preexec\n)+/, "preexec\n")
 
-def sanitize(str)
-  # ZSH writes some really crazy shit to stdout when it thinks it's attached to
-  # a TTY. Don't try too hard to understand this: it's just what I had to do to
-  # strip all the formatting stuff.
-  str
-    .gsub(/\r \r/, "\r")
-    .sub(/%.*?\r/, '')
-    .gsub(/\x1b\[\??[\d;]*\w/, '')
-    .gsub(/(.)\x08/, '')
-    .tr("\r", '')
+def between(array, before, after)
+  index = array.index(before)
+  return [] unless index
+  array = array[index+1..-1]
+  index = array.index(after)
+  return [] unless index
+  array[0...index]
 end
 
-def run_test(expect, *argv)
-  ours, theirs = PTY.open
+def run_test(expect, *argv, aliases: false)
+  sh = Shell.new(*argv, prompt: '> ').send_commands(INPUT)
+  lines = sh.output
+  sh.close
 
-  pid = Process.spawn(*argv, in: theirs, out: theirs, err: theirs, pgroup: true)
-
-  tw = Thread.new do
-    INPUT.lines.each { |l| ours.puts(l) }
-  end
-
-  output_lines = []
-
-  found_begin = false
-  while (out = sanitize(ours.gets)) !~ /^> @DONE@/
-    output_lines << out if found_begin
-    found_begin = true if out =~ /^> : @BEGIN@/
-  end
-  ours.close
-  tw.join
+  output_lines = between(lines, "> : @BEGIN@\n", "> : @DONE@\n")
 
   if output_lines.join == expect
     puts("OK #{argv.first}")
@@ -88,8 +71,6 @@ def run_test(expect, *argv)
     puts("WANT: #{expect.inspect}")
     abort('test failure')
   end
-
-  Process.waitpid2(pid)
 end
 
 run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs')

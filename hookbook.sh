@@ -31,7 +31,7 @@ __hookbook_array_contains() {
 }
 
 __hookbook_call_each() {
-  [[ "$#" -lt 2 ]] && \return 1
+  [[ "$#" -lt 2 ]] && \return
   \local hookname="$1"; \shift
   \local fn="$1"; \shift
   "${fn}" "${hookname}"

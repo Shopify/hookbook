@@ -52,6 +52,7 @@ precmd
 preexec
 preexec
 preexec
+preexec
 precmd
 > \\echo ok | wc -l
 preexec

@@ -1,7 +1,24 @@
 require('open3')
 require('pty')
+require('pathname')
 
 class Shell
+  def self.available_versions(shell)
+    shells = ENV['PATH'].split(':').map { |d| File.join(d, shell) }
+      .select { |f| File.file?(f) && File.executable?(f) }
+      .uniq { |f| Pathname.new(f).realpath }
+
+    shells.inject({}) do |h, path|
+      v, st = Open3.capture2e(path, '--version')
+      if st.success?
+        version = v.match(/[\d.]+/)[0]
+        h.merge(version => path)
+      else
+        h
+      end
+    end
+  end
+
   def initialize(*args, prompt:)
     @prompt = prompt
     @ours, theirs = PTY.open

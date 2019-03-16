@@ -82,7 +82,7 @@ STRICT_EXPECT = <<EOF + PROMPT
 0
 EOF
 
-def run_test(expect, *argv, aliases: false)
+def run_test(version, expect, *argv, aliases: false)
   inputs = INPUTS
   inputs[0] = ALIASES if aliases
 
@@ -97,7 +97,7 @@ def run_test(expect, *argv, aliases: false)
 
   unescaped = (source_lines+setup_lines).select { |l| l.start_with?('unescaped ') }.uniq
 
-  title = "#{argv.first}#{' (escaping)' if aliases}"
+  title = "#{argv.first} #{version}#{' (escaping)' if aliases}"
   if unescaped.any?
     puts("NOT OK #{title}")
     puts(unescaped)
@@ -116,11 +116,12 @@ def run_test(expect, *argv, aliases: false)
   else
     puts("OK #{title}")
   end
+  run_test(version, expect, *argv, aliases: true) unless aliases
 end
 
-run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs', '-o', 'no_prompt_cr', '-o', 'no_zle')
-run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc')
-run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc')
-run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs', '-o', 'no_prompt_cr', '-o', 'no_zle', aliases: true)
-run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc', aliases: true)
-run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc', aliases: true)
+Shell.available_versions('zsh').each do |version, path|
+  run_test(version, ZSH_EXPECT, path, '--no-rcs', '--no-globalrcs', '-o', 'no_prompt_cr', '-o', 'no_zle')
+end
+Shell.available_versions('bash').each do |version, path|
+  run_test(version, BASH_EXPECT, path, '--noprofile', '--norc')
+end

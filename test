@@ -118,9 +118,9 @@ def run_test(expect, *argv, aliases: false)
   end
 end
 
-run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs')
+run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs', '-o', 'no_prompt_cr', '-o', 'no_zle')
 run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc')
 run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc')
-run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs', aliases: true)
+run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs', '-o', 'no_prompt_cr', '-o', 'no_zle', aliases: true)
 run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc', aliases: true)
 run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc', aliases: true)

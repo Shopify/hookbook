@@ -6,8 +6,7 @@ class Shell
     @prompt = prompt
     @ours, theirs = PTY.open
     @pid = Process.spawn({'PS1' => @prompt }, *args, in: theirs, out: theirs, err: theirs, pgroup: true)
-    @output_lines = []
-    @trailing_output = ''
+    @output = ''
     advance_to_prompt
   end
 
@@ -20,14 +19,13 @@ class Shell
     tw = Thread.new do
       @ours.puts(command);
     end
-    @trailing_output += @ours.gets
-    tw.join
     advance_to_prompt
+    tw.join
     self
   end
 
   def output
-    @output_lines + trailing_as_output
+    @output.gsub("\r\n", "\n").lines
   end
 
   def close
@@ -37,32 +35,7 @@ class Shell
 
   private
 
-  def sanitize(str)
-    # ZSH writes some really crazy shit to stdout when it thinks it's attached to
-    # a TTY. Don't try too hard to understand this: it's just what I had to do to
-    # strip all the formatting stuff.
-    str
-      .gsub(/\r \r/, "\r")
-      .sub(/%.*?\r/, '')
-      .gsub(/\x1b\[\??[\d;]*\w/, '')
-      .gsub(/(.)\x08/, '')
-      .tr("\r", '')
-  end
-
-  def at_prompt
-    output = sanitize(@trailing_output)
-    output == @prompt || output.end_with?("\n#{@prompt}")
-  end
-
   def advance_to_prompt
-    @output_lines += trailing_as_output
-    @trailing_output = ''
-    until at_prompt
-      @trailing_output += @ours.gets(@prompt)
-    end
-  end
-
-  def trailing_as_output
-    sanitize(@trailing_output).lines
+    @output += @ours.gets(@prompt)
   end
 end

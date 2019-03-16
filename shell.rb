@@ -37,7 +37,9 @@ class Shell
     tw = Thread.new do
       @ours.puts(command);
     end
-    advance_to_prompt
+    loop do
+      @output += @ours.getc
+    end
     tw.join
   end
 

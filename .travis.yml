@@ -2,6 +2,10 @@ language: ruby
 rvm: 2.4.1
 git:
   depth: 1
-# before_install: sudo apt-get install -y zsh
+before_install:
+  - sudo add-apt-repository -y ppa:hyperair/zsh-backports
+  - sudo apt-get update
+  - sudo apt-get install -y zsh
+  - zsh --version
 install: true
 script: ruby --disable-gems ./test

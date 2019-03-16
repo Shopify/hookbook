@@ -38,9 +38,9 @@ INPUTS = [
   [
     '\\true',
     '\\echo ok',
-    '\\echo ok | wc -l',
+    '\\echo ok | tr -d k',
     '\\source hookbook.sh',
-    '\\echo ok | wc -l',
+    '\\echo ok | tr -d k',
   ],
 ]
 
@@ -56,10 +56,10 @@ precmd
 preexec
 ok
 precmd
-> \\echo ok | wc -l
+> \\echo ok | tr -d k
 preexec
 preexec
-       1
+o
 precmd
 > \\source hookbook.sh
 preexec
@@ -67,10 +67,10 @@ preexec
 preexec
 preexec
 precmd
-> \\echo ok | wc -l
+> \\echo ok | tr -d k
 preexec
 preexec
-       1
+o
 precmd
 EOF
 

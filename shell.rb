@@ -11,8 +11,7 @@ class Shell
   end
 
   def send_commands(commands)
-    commands.lines.each { |command| send_command(command) }
-    self
+    commands.each { |command| send_command(command) }
   end
 
   def send_command(command)
@@ -21,11 +20,16 @@ class Shell
     end
     advance_to_prompt
     tw.join
-    self
   end
 
   def output
     @output.gsub("\r\n", "\n").lines
+  end
+
+  def output!
+    output
+  ensure
+    @output = ''
   end
 
   def close

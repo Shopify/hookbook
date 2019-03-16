@@ -6,6 +6,7 @@
 # /usr/local/bin/zsh is installed
 
 require_relative 'shell'
+require 'timeout'
 
 REQUIRE_ESCAPES = %w(
   alias alloc bg bind bindkey break breaksw builtins case cd chdir command complete continue default dirs do done echo
@@ -86,12 +87,22 @@ def run_test(version, expect, *argv, aliases: false)
   inputs = INPUTS
   inputs[0] = ALIASES if aliases
 
-  sh = Shell.new(*argv, prompt: PROMPT)
-  outputs = inputs.map do |commands|
-    sh.send_commands(commands)
-    sh.output!
+  outputs = nil
+  begin
+    sh = nil
+    Timeout.timeout(3) do
+      sh = Shell.new(*argv, prompt: PROMPT)
+      outputs = inputs.map do |commands|
+        sh.send_commands(commands)
+        sh.output!
+      end
+      sh.close
+    end
+  rescue Timeout::Error
+    puts outputs
+    puts sh.output
+    raise
   end
-  sh.close
 
   alias_lines, pipefail_lines, source_lines, setup_lines, output_lines = outputs
 

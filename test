@@ -6,6 +6,7 @@
 # /usr/local/bin/zsh is installed
 
 require_relative 'shell'
+require 'timeout'
 
 REQUIRE_ESCAPES = %w(
   alias alloc bg bind bindkey break breaksw builtins case cd chdir command complete continue default dirs do done echo
@@ -117,6 +118,10 @@ def run_test(version, expect, *argv, aliases: false)
     puts("OK #{title}")
   end
   run_test(version, expect, *argv, aliases: true) unless aliases
+rescue Timeout::Error
+  puts outputs
+  puts sh.output
+  raise
 end
 
 Shell.available_versions('zsh').each do |version, path|

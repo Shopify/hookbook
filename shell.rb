@@ -1,6 +1,7 @@
 require('open3')
 require('pty')
 require('pathname')
+require('timeout')
 
 class Shell
   def self.available_versions(shell)
@@ -57,6 +58,17 @@ class Shell
   private
 
   def advance_to_prompt
-    @output += @ours.gets(@prompt)
+    size = 16
+    Timeout.timeout(3) do
+      begin
+        loop do
+          @output += @ours.read_nonblock(size)
+          break if @output.end_with?(@prompt)
+        end
+      rescue IO::EAGAINWaitReadable
+        size /= 2 unless size == 1
+        retry
+      end
+    end
   end
 end

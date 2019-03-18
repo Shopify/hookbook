@@ -1,33 +1,53 @@
 require('open3')
 require('pty')
+require('pathname')
+require('timeout')
 
 class Shell
+  def self.available_versions(shell)
+    shells = ENV['PATH'].split(':').map { |d| File.join(d, shell) }
+      .select { |f| File.file?(f) && File.executable?(f) }
+      .uniq { |f| Pathname.new(f).realpath }
+
+    shells.inject({}) do |h, path|
+      v, st = Open3.capture2e(path, '--version')
+      if st.success?
+        version = v.match(/[\d.]+/)[0]
+        h.merge(version => path)
+      else
+        h
+      end
+    end
+  end
+
   def initialize(*args, prompt:)
     @prompt = prompt
     @ours, theirs = PTY.open
     @pid = Process.spawn({'PS1' => @prompt }, *args, in: theirs, out: theirs, err: theirs, pgroup: true)
-    @output_lines = []
-    @trailing_output = ''
+    @output = ''
     advance_to_prompt
   end
 
   def send_commands(commands)
-    commands.lines.each { |command| send_command(command) }
-    self
+    commands.each { |command| send_command(command) }
   end
 
   def send_command(command)
     tw = Thread.new do
       @ours.puts(command);
     end
-    @trailing_output += @ours.gets
-    tw.join
     advance_to_prompt
-    self
+    tw.join
   end
 
   def output
-    @output_lines + trailing_as_output
+    @output.gsub("\r\n", "\n").lines
+  end
+
+  def output!
+    output
+  ensure
+    @output = ''
   end
 
   def close
@@ -37,32 +57,18 @@ class Shell
 
   private
 
-  def sanitize(str)
-    # ZSH writes some really crazy shit to stdout when it thinks it's attached to
-    # a TTY. Don't try too hard to understand this: it's just what I had to do to
-    # strip all the formatting stuff.
-    str
-      .gsub(/\r \r/, "\r")
-      .sub(/%.*?\r/, '')
-      .gsub(/\x1b\[\??[\d;]*\w/, '')
-      .gsub(/(.)\x08/, '')
-      .tr("\r", '')
-  end
-
-  def at_prompt
-    output = sanitize(@trailing_output)
-    output == @prompt || output.end_with?("\n#{@prompt}")
-  end
-
   def advance_to_prompt
-    @output_lines += trailing_as_output
-    @trailing_output = ''
-    until at_prompt
-      @trailing_output += @ours.gets(@prompt)
+    size = 16
+    Timeout.timeout(3) do
+      begin
+        loop do
+          @output += @ours.read_nonblock(size)
+          break if @output.end_with?(@prompt)
+        end
+      rescue IO::EAGAINWaitReadable
+        size /= 2 unless size == 1
+        retry
+      end
     end
-  end
-
-  def trailing_as_output
-    sanitize(@trailing_output).lines
   end
 end

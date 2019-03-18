@@ -6,6 +6,7 @@
 # /usr/local/bin/zsh is installed
 
 require_relative 'shell'
+require 'timeout'
 
 REQUIRE_ESCAPES = %w(
   alias alloc bg bind bindkey break breaksw builtins case cd chdir command complete continue default dirs do done echo
@@ -16,37 +17,50 @@ REQUIRE_ESCAPES = %w(
   until wait where which while
 )
 
-INPUT = <<EOF
-: @SET_ALIASES@
-\\set -eo pipefail
-: @START_STRICT@
-\\source hookbook.sh
-\\echo $?
-: @END_STRICT@
-f() { \\echo $1; }
-hookbook_add_hook f
-hookbook_add_hook f
-: @BEGIN@
-\\echo ok
-\\echo ok | wc -l
-\\source hookbook.sh
-\\echo ok | wc -l
-: @DONE@
-EOF
+ALIASES = REQUIRE_ESCAPES.map do |builtin|
+  %(\\alias #{builtin}='\\echo "unescaped #{builtin}: $0:$LINENO"')
+end
+
+
+INPUTS = [
+  [],
+  [
+    '\\set -eo pipefail',
+  ],
+  [
+    '\\source hookbook.sh',
+    '\\echo $?',
+  ],
+  [
+    'f() { \\echo $1; }',
+    'hookbook_add_hook f',
+    'hookbook_add_hook f',
+  ],
+  [
+    '\\true',
+    '\\echo ok',
+    '\\echo ok | tr -d k',
+    '\\source hookbook.sh',
+    '\\echo ok | tr -d k',
+  ],
+]
+
+PROMPT = '> '
 
 # We call DEBUG/preexec a lot of times when we source hookbook.sh the second
 # time. I wonder if we can cut that down to one.
-BASH_EXPECT = <<EOF
+BASH_EXPECT = <<EOF + PROMPT
+\\true
 preexec
 precmd
 > \\echo ok
 preexec
 ok
 precmd
-> \\echo ok | wc -l
+> \\echo ok | tr -d k
 preexec
 preexec
-       1
+o
 precmd
 > \\source hookbook.sh
 preexec
@@ -54,50 +68,37 @@ preexec
 preexec
 preexec
 precmd
-> \\echo ok | wc -l
+> \\echo ok | tr -d k
 preexec
 preexec
-       1
+o
 precmd
 EOF
 
 ZSH_EXPECT = BASH_EXPECT.gsub(/(preexec\n)+/, "preexec\n")
 
-STRICT_EXPECT = <<EOF
-> \\source hookbook.sh
+STRICT_EXPECT = <<EOF + PROMPT
+\\source hookbook.sh
 > \\echo $?
 0
 EOF
 
-def between(array, before, after)
-  index = array.index(before)
-  return [] unless index
-  array = array[index+1..-1]
-  index = array.index(after)
-  return [] unless index
-  array[0...index]
-end
+def run_test(version, expect, *argv, aliases: false)
+  inputs = INPUTS
+  inputs[0] = ALIASES if aliases
 
-def run_test(expect, *argv, aliases: false)
-  input = INPUT
-
-  if aliases
-    set_aliases = REQUIRE_ESCAPES.map do |builtin|
-      %(\\alias #{builtin}='\\echo "unescaped #{builtin}: $0:$LINENO"'\n)
-    end.join
-    input = input.sub(': @SET_ALIASES@', set_aliases + ': @ALIASES@')
+  sh = Shell.new(*argv, prompt: PROMPT)
+  outputs = inputs.map do |commands|
+    sh.send_commands(commands)
+    sh.output!
   end
-  sh = Shell.new(*argv, prompt: '> ').send_commands(input)
-  lines = sh.output
   sh.close
 
-  sourcing_output_lines = between(lines, "> : @ALIASES@\n", "> : @BEGIN@\n")
-  output_lines = between(lines, "> : @BEGIN@\n", "> : @DONE@\n")
-  strict_lines = between(lines, "> : @START_STRICT@\n", "> : @END_STRICT@\n")
+  alias_lines, pipefail_lines, source_lines, setup_lines, output_lines = outputs
 
-  unescaped = sourcing_output_lines.select { |l| l.start_with?('unescaped ') }.uniq
+  unescaped = (source_lines+setup_lines).select { |l| l.start_with?('unescaped ') }.uniq
 
-  title = "#{argv.first}#{' (escaping)' if aliases}"
+  title = "#{argv.first} #{version}#{' (escaping)' if aliases}"
   if unescaped.any?
     puts("NOT OK #{title}")
     puts(unescaped)
@@ -107,20 +108,25 @@ def run_test(expect, *argv, aliases: false)
     puts("HAVE: #{output_lines.join.inspect}")
     puts("WANT: #{expect.inspect}")
     abort('test failure')
-  elsif strict_lines.join != STRICT_EXPECT
+  elsif source_lines.join != STRICT_EXPECT
     puts("NOT OK #{title}")
     puts("failed strict check")
-    puts("HAVE: #{strict_lines.join.inspect}")
+    puts("HAVE: #{source_lines.join.inspect}")
     puts("WANT: #{STRICT_EXPECT.inspect}")
     abort('test failure')
   else
     puts("OK #{title}")
   end
+  run_test(version, expect, *argv, aliases: true) unless aliases
+rescue Timeout::Error
+  puts outputs
+  puts sh.output
+  raise
 end
 
-run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs')
-run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc')
-run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc')
-run_test(ZSH_EXPECT,  '/usr/local/bin/zsh', '--no-rcs', '--no-globalrcs', aliases: true)
-run_test(BASH_EXPECT, '/bin/bash', '--noprofile', '--norc', aliases: true)
-run_test(BASH_EXPECT, '/usr/local/bin/bash', '--noprofile', '--norc', aliases: true)
+Shell.available_versions('zsh').each do |version, path|
+  run_test(version, ZSH_EXPECT, path, '--no-rcs', '--no-globalrcs', '-o', 'no_prompt_cr', '-o', 'no_zle')
+end
+Shell.available_versions('bash').each do |version, path|
+  run_test(version, BASH_EXPECT, path, '--noprofile', '--norc')
+end
